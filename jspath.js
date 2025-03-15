@@ -1,5 +1,9 @@
+// jspath.js - Module with the primary business logic
+try { require('./0_shim.js'); } catch {}
+function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = module.exports, require = module.require) {
+  ///////// BEGIN USER CODE /////////
 
-const jspath = {
+
   /**
    * Evaluates a given expression using the provided dictionary as the context (`this`),
    * and passes any additional arguments as an array named `args` to the expression.
@@ -14,7 +18,7 @@ const jspath = {
    * @returns {*} The result of evaluating the expression.
    * @throws {Error} If the evaluation fails or if the arguments are invalid.
    */
-  eval(dictionary, expression, ...args) {
+  function eval(dictionary, expression, ...args) {
     if (typeof dictionary !== 'object' || dictionary === null) {
       throw new Error('dictionary must be an object');
     }
@@ -41,7 +45,7 @@ const jspath = {
     } catch (e) {
       throw new Error("Error evaluating expression: " + e.message);
     }
-  },
+  }
   /**
    * Clips strings within a data structure to the first N characters.
    * 
@@ -64,7 +68,7 @@ const jspath = {
    * // String input
    * snippet("Hello, World!", 5) // Returns "Hello"
    */
-  snippet(input, N) {
+  function snippet(input, N) {
     // Case 1: If input is a string, clip it to the first N characters
     if (typeof input === 'string') {
       return input.slice(0, N);
@@ -85,14 +89,14 @@ const jspath = {
     else {
       return input;
     }
-  },
+  }
   /**
    * Determines if a string has a high probability of being in base64 format.
    *
    * @param {string} str - The string to check.
    * @returns {boolean} True if the string is likely base64-encoded, false otherwise.
    */
-  isProbablyBase64(str) {
+  function isProbablyBase64(str) {
     // Check if the argument is a string
     if (typeof str !== 'string') {
       return false;
@@ -103,7 +107,7 @@ const jspath = {
 
     // Check if the string matches the base64 pattern and has a length that is a multiple of 4
     return base64Regex.test(str) && str.length % 4 === 0;
-  },
+  }
   /**
    * Formats a value into a string representation, handling various types including dates, strings, numbers, arrays, objects, and functions.
    *
@@ -114,7 +118,7 @@ const jspath = {
    * @param {number} [dictIndent=0] - The indentation level for dictionary entries.
    * @returns {string} The formatted string representation of the value.
    */
-  fmt(x, arraySep = '\n', dictSep = '\n', braceSep = '\n', dictIndent = 0) {
+  function fmt(x, arraySep = '\n', dictSep = '\n', braceSep = '\n', dictIndent = 0) {
     // Argument checking
     if (typeof arraySep !== 'string' || typeof dictSep !== 'string' || typeof braceSep !== 'string') {
       throw new TypeError('Separators must be strings');
@@ -178,13 +182,13 @@ const jspath = {
     }
 
     return result;
-  },
+  }
   /**
    * Parses a string path into an array of keys, supporting dot and bracket notation.
    * @param {string} path - The path to parse (e.g., "a.b[0].c", "step_output['step.1']", "step_output[\"key with spaces\"]").
    * @returns {string[]} An array of keys.
    */
-  parsePath(path) {
+  function parsePath(path) {
     if (typeof path !== 'string') throw new Error(`Path must be a string, got ${typeof path}`);
     
     const keys = [];
@@ -233,7 +237,7 @@ const jspath = {
     if (key) keys.push(key);
     
     return keys;
-  },
+  }
 
   /**
    * Retrieves a value from the namespace using the specified path.
@@ -242,7 +246,7 @@ const jspath = {
    * @returns {*} The value at the path, or undefined if the path does not exist.
    * @throws {Error} If namespace is neither an object nor null, or if path is not a string.
    */
-  fetch(namespace, path) {
+  function fetch(namespace, path) {
     if (namespace !== null && typeof namespace !== 'object') {
       throw new Error('Namespace must be an object or null');
     }
@@ -264,7 +268,7 @@ const jspath = {
       current = current[key];
     }
     return current;
-  },
+  }
 
   /**
    * Applies a value to a dictionary at the specified path, creating intermediate objects if necessary.
@@ -277,7 +281,7 @@ const jspath = {
    * @throws {Error} If dict is neither an object nor null.
    * @throws {Error} If path is not a string or is empty.
    */
-   apply(dict, path, value) {
+  function apply(dict, path, value) {
     // Check arguments
     if (dict !== null && typeof dict !== 'object') {
       throw new Error('Dict must be an object or null');
@@ -309,7 +313,7 @@ const jspath = {
     current[lastKey] = value;
 
     return dict;
-  },
+  }
 
   /**
    * Replaces placeholders in a string with values from the state.
@@ -320,7 +324,7 @@ const jspath = {
    * @returns {string} The string with placeholders replaced.
    * @throws {Error} If state is not an object or is null, or if str is not a string.
    */
-  substitute(state, str, callback, keepFormattingIfMissing = false) {
+  function substitute(state, str, callback, keepFormattingIfMissing = false) {
     
     const strType = typeof str ;
 
@@ -373,7 +377,7 @@ const jspath = {
       // Otherwise, use the default behavior
       return valueToString(value);
     });
-  },
+  }
   /**
    * substituteTree - Creates a new copy of the input with all string placeholders replaced with values from the state.
    * Always returns a fresh copy regardless of whether substitutions were made.
@@ -384,7 +388,7 @@ const jspath = {
    * @returns {string|Object|Array} - A new copy with placeholders replaced.
    * @throws {Error} If state is not an object or is null.
    */
-  substituteTree(state, input, callback, keepFormattingIfMissing) {
+  function substituteTree(state, input, callback, keepFormattingIfMissing) {
 
     // Handle null or undefined
     if (input === null || input === undefined) {
@@ -409,7 +413,7 @@ const jspath = {
     {
       return jspath.substitute(state, input, callback, keepFormattingIfMissing);
     }
-  },
+  }
 
   /**
    * Identifies unique missing paths in the namespace based on a string with placeholders or an array of paths.
@@ -419,7 +423,7 @@ const jspath = {
    * @returns {string[]} An array of unique missing paths in order of first appearance.
    * @throws {Error} If namespace is not an object or is null, or if arg is neither a string nor an array of strings.
    */
-  isMissing(namespace, arg) {
+  function isMissing(namespace, arg) {
     if (typeof namespace !== 'object' || namespace === null) {
       throw new Error('Namespace must be an object');
     }
@@ -444,16 +448,16 @@ const jspath = {
       throw new Error('Second argument must be a string or an array of strings');
     }
     return Array.from(missing);
-  },
+  }
 
   /**
    * Get a JSON string which is commonly used inside an LLM prmopt to represent
    * that the format is JSON 
    */
-  llmStringify( toFormat )
+  function llmStringify( toFormat )
   {
     return `\n\`\`\`\n${JSON.stringify(toFormat)}\n\`\`\`\n`;
-  },
+  }
 
   /**
    * Identifies unique missing paths in the namespace based on placeholders in a substitute string.
@@ -462,7 +466,7 @@ const jspath = {
    * @returns {string[]} An array of unique missing paths in order of first appearance.
    * @throws {Error} If namespace is not an object or is null, or if substitute_string is not a string.
    */
-  isMissingSubstitute(namespace, substitute_string) {
+  function isMissingSubstitute(namespace, substitute_string) {
     if (typeof namespace !== 'object' || namespace === null) {
       throw new Error('Namespace must be an object');
     }
@@ -471,12 +475,7 @@ const jspath = {
     }
     return this.isMissing(namespace, substitute_string);
   }
-};
 
-// Extending the existing jspath namespace with caching functionality
-if (typeof jspath === 'undefined') {
-  jspath = {};
-}
 
 // Add cache as a sub-namespace
 jspath.cache = {
@@ -1452,6 +1451,27 @@ jspath.cache = {
         return CacheService.getDocumentCache();
     }
   }
-};
+}
 
-module.exports = jspath;
+module.exports = { 
+  cache, 
+  isMissing,
+  getSafe,
+  substituteTree,
+  eval,
+  llmStringify,
+  isMissingSubstitute,
+  apply,
+  fetch,
+  parsePath,
+  fmt,
+  snippet,
+} ;
+
+
+  ///////// END USER CODE /////////
+}
+
+
+// Initialize this module using the shim
+initModule('jspath/jspath.js', _main, (() => { try { return module } catch { return null } })(), false);

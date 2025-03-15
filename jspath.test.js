@@ -1,3 +1,8 @@
+// jspath.test.js - Module with the primary business logic
+try { require('./0_shim.js'); } catch {}
+function _main(module = globalThis['__modules']['jspath/jspath.test.js'], exports = module.exports, require = module.require) {
+  ///////// BEGIN USER CODE /////////
+
 /**
  * Unit tests for jspath.js library
  */
@@ -525,3 +530,9 @@ describe('jspath utility library', () => {
     });
   });
 });
+
+  ///////// END USER CODE /////////
+}
+
+// Initialize this module using the shim
+initModule('jspath/jspath.test.js', _main, (() => { try { return module } catch { return null } })(), false);
