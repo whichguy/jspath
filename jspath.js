@@ -19,8 +19,8 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
    * @throws {Error} If the evaluation fails or if the arguments are invalid.
    */
   function eval(dictionary, expression, ...args) {
-    if (typeof dictionary !== 'object' || dictionary === null) {
-      throw new Error('dictionary must be an object');
+    if (typeof dictionary !== 'object' && dictionary !== null) {
+      throw new Error('dictionary must be an object or null');
     }
     
     if (typeof expression !== 'string') {
@@ -28,20 +28,28 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
     }
     
     try {
-      // Create variable declarations for all dictionary keys
-      const varDeclarations = Object.keys(dictionary)
-        .map(key => `const ${key} = this.${key};`)
-        .join('\n');
+      // If dictionary is null, use an empty object
+      const dict = dictionary || {};
       
-      // Create a function with dictionary variables in scope
-      const wrappedExpression = `${varDeclarations}\n${expression}`;
-      var func = new Function('args', wrappedExpression);
+      // Get all keys and values from the dictionary
+      const argNames = [];
+      const argValues = [];
+      Object.keys(dict).forEach(k => { 
+        argNames.push(k); 
+        argValues.push(dict[k]); 
+      });
+      
+      // Add 'args' as the last parameter name
+      argNames.push('args');
+      
+      // Create a function with dictionary keys as parameters
+      const func = new Function(...argNames, expression);
       
       // Bind the dictionary as this
-      var boundFunc = func.bind(dictionary);
-      console.log(`Eval about to execute:\n${boundFunc}`) ;
-      // Call the bound function with args
-      return boundFunc(args);
+      const boundFunc = func.bind(dict);
+      
+      // Call the bound function with values + args array as the last parameter
+      return boundFunc(...argValues, ...args);
     } catch (e) {
       throw new Error("Error evaluating expression: " + e.message);
     }
@@ -314,31 +322,30 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
 
     return dict;
   }
-
   /**
    * Replaces placeholders in a string with values from the state.
+   * Enhanced with embedded try-catch for better exception handling.
+   * 
    * @param {Object} state - The object containing the values.
-   * @param {string} str - The string with placeholders (e.g., "Hello {{name}}").
+   * @param {string} str - The string with placeholders (e.g., "Hello {{name}}" or "{{ foo.bar == null }}").
    * @param {Function} [callback] - Optional callback that receives (state, match, value, path) and returns the replacement string.
    * @param {boolean} [keepFormattingIfMissing=false] - If true, keeps the original placeholder when the path doesn't exist.
    * @returns {string} The string with placeholders replaced.
    * @throws {Error} If state is not an object or is null, or if str is not a string.
    */
-  function substitute(state, str, callback, keepFormattingIfMissing = false) {
-    
-    const strType = typeof str ;
+  function substitute(state, str, callback, keepFormattingIfMissing = false, allowExpressions = true ) {
+    const strType = typeof str;
 
-    switch( strType )
-    { 
+    switch(strType) { 
       case 'number':
       case 'boolean':
-        return String(str) ;
-        break ;
+        return String(str);
     }
 
     if (typeof str !== 'string') {
       throw new Error('String must be a string');
     }
+    
     const valueToString = (value) => {
       if (value === null || value === undefined) {
         return '';
@@ -358,26 +365,175 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
       }
       return '';
     };
+
+    // Simple function to get a value from a path
+    const getValueFromPath = (obj, path) => {
+      if (!obj || typeof obj !== 'object') return undefined;
+      
+      if (typeof this.fetch === 'function') {
+        return this.fetch(obj, path);
+      }
+      
+      const parts = path.split('.');
+      let current = obj;
+      
+      for (const part of parts) {
+        if (current === null || typeof current !== 'object' || !(part in current)) {
+          return undefined;
+        }
+        current = current[part];
+      }
+      
+      return current;
+    };
+
+    // Expression detection regex
+    const isExpressionPattern = /[!=<>]|&&|\|\||==|!==|\(|\?|\[/;
+    
     return str.replace(/\{\s*\{\s{0,2}(.*?)\s{0,2}\}\s*\}/g, (match, path) => {
       const trimmedPath = path.trim();
-      const value = state != null ? 
-        this.fetch(state, trimmedPath) :
-        undefined ;
       
-      // If a callback is provided and is a function, use it
-      if (callback && typeof callback === 'function') {
-        return callback(state, match, value, trimmedPath, keepFormattingIfMissing);
+      // Check if this appears to be an expression
+      if (isExpressionPattern.test(trimmedPath)) {
+
+        if ( allowExpressions == false )
+        {
+          if (keepFormattingIfMissing) {
+            return match;
+          }
+          else {
+            return '';
+          }
+        }
+
+        try {
+          // Only process if state is an object
+          if (!state || typeof state !== 'object') {
+            throw new Error('State must be an object for expression evaluation');
+          }
+          
+          // Get the top-level keys from state to use as parameter names
+          const paramNames = Object.keys(state);
+          
+          // Get the corresponding values
+          const paramValues = paramNames.map(key => state[key]);
+          
+          // Create the function with the state properties as named parameters and embedded try-catch
+          const functionBody = `
+            try {
+              return (${trimmedPath});
+            } catch (e) {
+              return e;  // Return the exception object
+            }
+          `;
+          const expressionFunc = new Function(...paramNames, functionBody);
+          
+          // Execute the function with state values as arguments
+          // Use .apply with an empty object as 'this' to ensure clean context
+          const result = expressionFunc.apply({}, paramValues);
+          
+          // Check if the result is an exception
+          // Handle reference error specifically
+          if (result instanceof ReferenceError) {
+            if (keepFormattingIfMissing) {
+              return match;
+            }
+            return '';
+          }
+          else if ( result instanceof Error )
+          {
+            throw result ;
+          }
+          
+          // If no exception, process the result normally
+          if (callback && typeof callback === 'function') {
+            return callback(state, match, result, trimmedPath, keepFormattingIfMissing);
+          }
+          
+          // Convert the result to string
+          return valueToString(result);
+        } catch (e) {
+          console.error('Error processing expression:', e);
+          
+          // If there's an error and keepFormattingIfMissing is true,
+          // return the original match
+          if (keepFormattingIfMissing) {
+            return match;
+          }
+          return '';
+        }
+      } else {
+        // Not an expression, handle as normal path
+        const value = getValueFromPath(state, trimmedPath);
+        
+        // If a callback is provided and is a function, use it
+        if (callback && typeof callback === 'function') {
+          return callback(state, match, value, trimmedPath, keepFormattingIfMissing);
+        }
+        
+        // If the value is undefined and keepFormattingIfMissing is true, keep the original match
+        if (value === undefined && keepFormattingIfMissing) {
+          return match;
+        }
+        
+        // Otherwise, use the default behavior
+        return valueToString(value);
       }
-      
-      // If the value is undefined and keepFormattingIfMissing is true, keep the original match
-      if (value === undefined && keepFormattingIfMissing) {
-        return match;
-      }
-      
-      // Otherwise, use the default behavior
-      return valueToString(value);
     });
   }
+    
+    // const strType = typeof str ;
+
+    // switch( strType )
+    // { 
+    //   case 'number':
+    //   case 'boolean':
+    //     return String(str) ;
+    //     break ;
+    // }
+
+    // if (typeof str !== 'string') {
+    //   throw new Error('String must be a string');
+    // }
+    // const valueToString = (value) => {
+    //   if (value === null || value === undefined) {
+    //     return '';
+    //   }
+    //   if (typeof value === 'string') {
+    //     return value;
+    //   }
+    //   if (typeof value === 'number' || typeof value === 'boolean') {
+    //     return String(value);
+    //   }
+    //   if (typeof value === 'object') {
+    //     try {
+    //       return JSON.stringify(value);
+    //     } catch (e) {
+    //       return '[object]';
+    //     }
+    //   }
+    //   return '';
+    // };
+    // return str.replace(/\{\s*\{\s{0,2}(.*?)\s{0,2}\}\s*\}/g, (match, path) => {
+    //   const trimmedPath = path.trim();
+    //   const value = state != null ? 
+    //     this.fetch(state, trimmedPath) :
+    //     undefined ;
+      
+    //   // If a callback is provided and is a function, use it
+    //   if (callback && typeof callback === 'function') {
+    //     return callback(state, match, value, trimmedPath, keepFormattingIfMissing);
+    //   }
+      
+    //   // If the value is undefined and keepFormattingIfMissing is true, keep the original match
+    //   if (value === undefined && keepFormattingIfMissing) {
+    //     return match;
+    //   }
+      
+    //   // Otherwise, use the default behavior
+    //   return valueToString(value);
+    // });
+  
   /**
    * substituteTree - Creates a new copy of the input with all string placeholders replaced with values from the state.
    * Always returns a fresh copy regardless of whether substitutions were made.
@@ -411,7 +567,7 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
     }
     else 
     {
-      return jspath.substitute(state, input, callback, keepFormattingIfMissing);
+      return substitute(state, input, callback, keepFormattingIfMissing);
     }
   }
 
@@ -477,8 +633,8 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
   }
 
 
-// Add cache as a sub-namespace
-jspath.cache = {
+  // Add cache as a sub-namespace
+  cache = {
   /**
    * Retrieves cached data or fetches and caches fresh data
    * The expectedContent parameter can be used to quickly validate against cached content
@@ -1453,11 +1609,12 @@ jspath.cache = {
   }
 }
 
+
 module.exports = { 
   cache, 
   isMissing,
-  getSafe,
   substituteTree,
+  substitute,
   eval,
   llmStringify,
   isMissingSubstitute,
