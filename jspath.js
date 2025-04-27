@@ -1,7 +1,57 @@
 // jspath.js - Module with the primary business logic
-try { require('./0_shim.js'); } catch {}
+try { require(process.cwd() + '/0_shim.js'); } catch {}
 function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = module.exports, require = module.require) {
   ///////// BEGIN USER CODE /////////
+
+  /**
+   * @fileoverview JSPath - A powerful utility library for working with nested JavaScript objects
+   * and performing template-based string substitution with path expressions.
+   * 
+   * This library provides a comprehensive set of functions for:
+   * - Retrieving values from nested objects using path expressions
+   * - Setting values in nested objects, automatically creating intermediary structures
+   * - Evaluating JavaScript expressions with object context
+   * - Replacing placeholders in templates with values from objects
+   * - Caching expensive operations with configurable expiration
+   * 
+   * @module jspath
+   * @version 1.0.0
+   * @author MCP Team
+   * 
+   * @example
+   * // Basic usage - fetching nested values
+   * const data = { user: { profile: { name: 'Alice', age: 30 } } };
+   * jspath.fetch(data, 'user.profile.name'); // Returns 'Alice'
+   * 
+   * @example
+   * // Template substitution
+   * const state = { user: 'Alice', count: 5 };
+   * jspath.substitute(state, 'Hello, {{user}}! You have {{count}} new messages.');
+   * // Returns 'Hello, Alice! You have 5 new messages.'
+   * 
+   * @example
+   * // Creating/updating nested paths
+   * let config = {};
+   * jspath.apply(config, 'app.settings.theme', 'dark');
+   * jspath.apply(config, 'app.settings.notifications', true);
+   * // config is now: { app: { settings: { theme: 'dark', notifications: true } } }
+   * 
+   * @example
+   * // Template substitution with expressions
+   * const state = { user: { age: 25, premium: true } };
+   * jspath.substitute(state, 'Status: {{ user.premium ? "Premium" : "Basic" }} user');
+   * // Returns 'Status: Premium user'
+   * 
+   * @example
+   * // Caching expensive operations
+   * const result = jspath.cache.get(
+   *   '/expensive/operation/key',
+   *   () => performExpensiveCalculation(),
+   *   'validation-string',
+   *   'DOCUMENT',
+   *   { expiration: '1h' }
+   * );
+   */
 
 
   /**
@@ -17,6 +67,19 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
    * @param {...*} args - Additional arguments to be passed as an array to the expression.
    * @returns {*} The result of evaluating the expression.
    * @throws {Error} If the evaluation fails or if the arguments are invalid.
+   * 
+   * @example
+   * // Simple evaluation with dictionary context
+   * jspath.eval({x: 10, y: 20}, 'return this.x + this.y'); // Returns 30
+   * 
+   * @example
+   * // Using additional arguments
+   * jspath.eval({name: 'Alice'}, 'return this.name + " " + args[0] + " " + args[1]', 'is', 'coding'); 
+   * // Returns "Alice is coding"
+   * 
+   * @example
+   * // Accessing nested properties
+   * jspath.eval({user: {profile: {age: 25}}}, 'return this.user.profile.age >= 18'); // Returns true
    */
   function eval(dictionary, expression, ...args) {
     if (typeof dictionary !== 'object' && dictionary !== null) {
@@ -117,7 +180,11 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
     return base64Regex.test(str) && str.length % 4 === 0;
   }
   /**
-   * Formats a value into a string representation, handling various types including dates, strings, numbers, arrays, objects, and functions.
+   * Formats a value into a human-readable string representation, handling various data types 
+   * including dates, strings, numbers, arrays, objects, and functions with customizable formatting.
+   *
+   * This function provides better visualization than JSON.stringify by maintaining readability 
+   * of complex nested structures with proper indentation and formatting options.
    *
    * @param {any} x - The value to format.
    * @param {string} [arraySep='\n'] - The separator to use between array elements.
@@ -125,6 +192,36 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
    * @param {string} [braceSep='\n'] - The separator to use around braces in objects.
    * @param {number} [dictIndent=0] - The indentation level for dictionary entries.
    * @returns {string} The formatted string representation of the value.
+   * @throws {TypeError} If separator arguments aren't strings or dictIndent isn't a non-negative integer.
+   * 
+   * @example
+   * // Format a simple object
+   * const user = { name: "John", age: 30, roles: ["admin", "user"] };
+   * const formatted = jspath.fmt(user);
+   * // Returns:
+   * // {
+   * //   name: "John",
+   * //   age: 30,
+   * //   roles: [
+   * //     "admin",
+   * //     "user"
+   * //   ]
+   * // }
+   * 
+   * @example
+   * // Custom formatting with inline arrays
+   * jspath.fmt(user, ", ", "\n", "\n", 1);
+   * // Returns:
+   * // {
+   * //   name: "John",
+   * //   age: 30,
+   * //   roles: ["admin", "user"]
+   * // }
+   * 
+   * @example
+   * // Compact formatting for simple structures
+   * jspath.fmt(user, " ", ", ", "", 0);
+   * // Returns: {name: "John", age: 30, roles: ["admin", "user"]}
    */
   function fmt(x, arraySep = '\n', dictSep = '\n', braceSep = '\n', dictIndent = 0) {
     // Argument checking
@@ -192,9 +289,35 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
     return result;
   }
   /**
-   * Parses a string path into an array of keys, supporting dot and bracket notation.
+   * Parses a string path into an array of keys, supporting both dot notation and bracket notation
+   * with proper handling of quoted strings and escaped characters.
+   * 
+   * This function handles complex path expressions including:
+   * - Standard dot notation (a.b.c)
+   * - Bracket notation with numbers ([0], [1])
+   * - Bracket notation with quoted strings (['key with spaces'], ["nested.key"])
+   * - Mixed notation (users[0].profile.name)
+   * - Escaped characters in keys (a.b.\"escaped\")
+   *
    * @param {string} path - The path to parse (e.g., "a.b[0].c", "step_output['step.1']", "step_output[\"key with spaces\"]").
-   * @returns {string[]} An array of keys.
+   * @returns {string[]} An array of individual keys extracted from the path.
+   * @throws {Error} If path is not a string.
+   * 
+   * @example
+   * // Simple dot notation
+   * jspath.parsePath('user.profile.name'); // Returns ['user', 'profile', 'name']
+   * 
+   * @example
+   * // Array index notation
+   * jspath.parsePath('users[0].name'); // Returns ['users', '0', 'name']
+   * 
+   * @example
+   * // Mixed notation with quoted keys
+   * jspath.parsePath("data['user.name'][0].value"); // Returns ['data', 'user.name', '0', 'value']
+   * 
+   * @example
+   * // Keys with special characters
+   * jspath.parsePath("response['keys with spaces']"); // Returns ['response', 'keys with spaces']
    */
   function parsePath(path) {
     if (typeof path !== 'string') throw new Error(`Path must be a string, got ${typeof path}`);
@@ -248,11 +371,35 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
   }
 
   /**
-   * Retrieves a value from the namespace using the specified path.
+   * Retrieves a value from an object using a string path expression with support for
+   * dot notation and bracket notation.
+   * 
+   * This function safely traverses nested objects and arrays using the provided path,
+   * returning undefined if any part of the path doesn't exist rather than throwing an error.
+   *
    * @param {Object|null} namespace - The object to fetch from, or null.
-   * @param {string} path - The path to the value (e.g., "a.b[0]").
+   * @param {string} path - The path to the value (e.g., "user.profile.name", "users[0].address['city']").
    * @returns {*} The value at the path, or undefined if the path does not exist.
    * @throws {Error} If namespace is neither an object nor null, or if path is not a string.
+   * 
+   * @example
+   * // Fetch from nested object
+   * const data = { user: { profile: { name: 'Alice', age: 30 } } };
+   * jspath.fetch(data, 'user.profile.name'); // Returns 'Alice'
+   * 
+   * @example
+   * // Fetch from array
+   * const data = { users: [{ name: 'Alice' }, { name: 'Bob' }] };
+   * jspath.fetch(data, 'users[1].name'); // Returns 'Bob'
+   * 
+   * @example
+   * // Handling non-existent paths
+   * jspath.fetch(data, 'user.address.zipcode'); // Returns undefined
+   * 
+   * @example
+   * // Path with special characters using bracket notation
+   * const data = { 'response': { 'status code': 200 } };
+   * jspath.fetch(data, "response['status code']"); // Returns 200
    */
   function fetch(namespace, path) {
     if (namespace !== null && typeof namespace !== 'object') {
@@ -280,14 +427,41 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
 
   /**
    * Applies a value to a dictionary at the specified path, creating intermediate objects if necessary.
-   * Overwrites any existing value at the final key.
+   * This is useful for building or modifying deeply nested objects without having to manually create
+   * each level of the hierarchy.
+   * 
+   * The function will:
+   * - Create missing objects along the path
+   * - Overwrite any existing value at the final key
+   * - Return the modified dictionary
    *
    * @param {Object|null} dict - The dictionary to modify. If null, a new object is created.
-   * @param {string} path - The dot-separated path to the target key (e.g., "a.b.c"). Must be non-empty.
+   * @param {string} path - The dot-separated path to the target key (e.g., "a.b.c", "users[0].profile.name").
    * @param {*} value - The value to set at the target key.
    * @returns {Object} The modified dictionary.
-   * @throws {Error} If dict is neither an object nor null.
-   * @throws {Error} If path is not a string or is empty.
+   * @throws {Error} If dict is neither an object nor null, or if path is not a string or is empty.
+   * 
+   * @example
+   * // Set a value in a new object
+   * jspath.apply(null, 'user.profile.name', 'Alice');
+   * // Returns: { user: { profile: { name: 'Alice' } } }
+   * 
+   * @example
+   * // Modify an existing object
+   * const data = { user: { profile: { name: 'Alice' } } };
+   * jspath.apply(data, 'user.profile.age', 30);
+   * // data becomes: { user: { profile: { name: 'Alice', age: 30 } } }
+   * 
+   * @example
+   * // Create nested arrays using bracket notation
+   * jspath.apply({}, 'users[0].roles[0]', 'admin');
+   * // Returns: { users: [ { roles: [ 'admin' ] } ] }
+   * 
+   * @example
+   * // Override existing values
+   * const data = { settings: { theme: 'light' } };
+   * jspath.apply(data, 'settings.theme', 'dark');
+   * // data becomes: { settings: { theme: 'dark' } }
    */
   function apply(dict, path, value) {
     // Check arguments
@@ -323,15 +497,43 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
     return dict;
   }
   /**
-   * Replaces placeholders in a string with values from the state.
-   * Enhanced with embedded try-catch for better exception handling.
+   * Substitutes placeholders in a template string with values from a state object.
+   * Supports both simple variable substitution and complex expressions with optional
+   * custom callback handling.
    * 
-   * @param {Object} state - The object containing the values.
-   * @param {string} str - The string with placeholders (e.g., "Hello {{name}}" or "{{ foo.bar == null }}").
+   * Placeholders use the format {{path}} or {{expression}} where:
+   * - path: A dot-notation path to a value in the state object (e.g., "user.name")
+   * - expression: A JavaScript expression to evaluate using the state object as context
+   *   (e.g., "user.age > 18 ? 'Adult' : 'Minor'")
+   *
+   * @param {Object} state - The object containing the values to substitute.
+   * @param {string} str - The template string with placeholders (e.g., "Hello {{name}}" or "{{ user.age > 18 ? 'Adult' : 'Minor' }}").
    * @param {Function} [callback] - Optional callback that receives (state, match, value, path) and returns the replacement string.
    * @param {boolean} [keepFormattingIfMissing=false] - If true, keeps the original placeholder when the path doesn't exist.
-   * @returns {string} The string with placeholders replaced.
+   * @param {boolean} [allowExpressions=true] - If true, allows JavaScript expressions in placeholders.
+   * @returns {string} The string with placeholders replaced with their corresponding values.
    * @throws {Error} If state is not an object or is null, or if str is not a string.
+   * 
+   * @example
+   * // Simple variable substitution
+   * const state = { user: { name: 'Alice', age: 30 } };
+   * jspath.substitute(state, 'Hello, {{user.name}}!'); // Returns "Hello, Alice!"
+   * 
+   * @example
+   * // Using expressions
+   * jspath.substitute(state, 'User is {{ user.age >= 18 ? "an adult" : "a minor" }}');
+   * // Returns "User is an adult"
+   * 
+   * @example
+   * // Using a custom callback
+   * jspath.substitute(state, 'Hello, {{user.name}}!', 
+   *   (state, match, value, path) => value.toUpperCase());
+   * // Returns "Hello, ALICE!"
+   * 
+   * @example
+   * // Handling missing values
+   * jspath.substitute(state, 'City: {{user.address.city}}', null, true);
+   * // Returns "City: {{user.address.city}}" (since keepFormattingIfMissing is true)
    */
   function substitute(state, str, callback, keepFormattingIfMissing = false, allowExpressions = true ) {
     const strType = typeof str;
@@ -535,14 +737,54 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
     // });
   
   /**
-   * substituteTree - Creates a new copy of the input with all string placeholders replaced with values from the state.
-   * Always returns a fresh copy regardless of whether substitutions were made.
+   * Extends the functionality of the substitute method to process entire object trees
+   * or arrays, recursively substituting placeholders in all string values.
    * 
-   * @param {Object} state - The object containing the values.
-   * @param {string|Object|Array} input - The input with placeholders.
-   * @param {Function} [callback] - Optional callback that receives (state, match, value, path) and returns the replacement string.
-   * @returns {string|Object|Array} - A new copy with placeholders replaced.
-   * @throws {Error} If state is not an object or is null.
+   * This function applies templating throughout an entire data structure, making it
+   * easy to populate complex templates with dynamic data.
+   * 
+   * @param {Object} state - The object containing values for substitution.
+   * @param {*} input - The input value to process (string, object, array, or primitive).
+   * @param {Function} [callback] - Optional callback for custom replacement handling.
+   * @param {boolean} [keepFormattingIfMissing=false] - If true, keeps original placeholders when paths don't exist.
+   * @returns {*} A new value with all string placeholders substituted throughout the structure.
+   * 
+   * @example
+   * // Process a template object
+   * const state = { user: { name: 'Alice', age: 30 } };
+   * const template = {
+   *   greeting: 'Hello, {{user.name}}!',
+   *   status: '{{user.age >= 18 ? "Adult" : "Minor"}}',
+   *   details: {
+   *     info: 'Name: {{user.name}}, Age: {{user.age}}'
+   *   }
+   * };
+   * 
+   * const result = jspath.substituteTree(state, template);
+   * // Returns:
+   * // {
+   * //   greeting: 'Hello, Alice!',
+   * //   status: 'Adult',
+   * //   details: {
+   * //     info: 'Name: Alice, Age: 30'
+   * //   }
+   * // }
+   * 
+   * @example
+   * // Process arrays with templates
+   * const users = [{ name: 'Alice' }, { name: 'Bob' }];
+   * const template = [
+   *   'User {{index}}: {{item.name}}',
+   *   'Welcome {{item.name}}!'
+   * ];
+   * 
+   * const results = users.map((user, index) => 
+   *   jspath.substituteTree({ item: user, index }, template));
+   * // Returns:
+   * // [
+   * //   ['User 0: Alice', 'Welcome Alice!'],
+   * //   ['User 1: Bob', 'Welcome Bob!']
+   * // ]
    */
   function substituteTree(state, input, callback, keepFormattingIfMissing) {
 
@@ -572,12 +814,27 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
   }
 
   /**
-   * Identifies unique missing paths in the namespace based on a string with placeholders or an array of paths.
-   * A path is missing if fetch returns undefined.
-   * @param {Object} namespace - The object to check against.
-   * @param {string|Array<string>} arg - A string with placeholders or an array of paths.
-   * @returns {string[]} An array of unique missing paths in order of first appearance.
-   * @throws {Error} If namespace is not an object or is null, or if arg is neither a string nor an array of strings.
+   * Determines if a value is missing from an object at a specified path.
+   * Useful for checking existence without throwing errors for deep paths.
+   * 
+   * @param {Object|null} namespace - The object to check within.
+   * @param {string} arg - The path to check (e.g., "user.profile.name").
+   * @returns {boolean} True if the value is missing, undefined, or null; false otherwise.
+   * 
+   * @example
+   * // Check missing property
+   * const data = { user: { profile: { name: 'Alice' } } };
+   * jspath.isMissing(data, 'user.profile.age'); // Returns true
+   * 
+   * @example
+   * // Check existing property
+   * jspath.isMissing(data, 'user.profile.name'); // Returns false
+   * 
+   * @example
+   * // Check with null/undefined values
+   * const data = { user: { profile: { age: null, address: undefined } } };
+   * jspath.isMissing(data, 'user.profile.age'); // Returns true (null is considered missing)
+   * jspath.isMissing(data, 'user.profile.address'); // Returns true (undefined is missing)
    */
   function isMissing(namespace, arg) {
     if (typeof namespace !== 'object' || namespace === null) {
@@ -607,8 +864,27 @@ function _main(module = globalThis['__modules']['jspath/jspath.js'], exports = m
   }
 
   /**
-   * Get a JSON string which is commonly used inside an LLM prmopt to represent
-   * that the format is JSON 
+   * Formats a value into a string representation optimized for LLM (Large Language Model) consumption.
+   * This is a specialized version of string formatting that prioritizes generating content that's 
+   * easier for language models to process correctly.
+   * 
+   * @param {*} toFormat - The value to format into a string.
+   * @returns {string} The formatted string representation.
+   * 
+   * @example
+   * // Format a simple object for LLM
+   * const data = { user: { name: 'Alice', permissions: ['read', 'write'] } };
+   * jspath.llmStringify(data);
+   * // Returns a string representing the object with formatting optimized for LLM understanding
+   * 
+   * @example
+   * // Format error objects
+   * try {
+   *   throw new Error('Something went wrong');
+   * } catch (error) {
+   *   const errorString = jspath.llmStringify(error);
+   *   // Returns a string representation of the error suitable for LLM processing
+   * }
    */
   function llmStringify( toFormat )
   {

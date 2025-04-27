@@ -1,5 +1,5 @@
 // jspath.test.js - Module with the primary business logic
-try { require('./0_shim.js'); } catch {}
+try { require(process.cwd() + '/0_shim.js'); } catch {}
 function _main(module = globalThis['__modules']['jspath/jspath.test.js'], exports = module.exports, require = module.require) {
   ///////// BEGIN USER CODE /////////
 
